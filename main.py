@@ -22,7 +22,7 @@ from anthropic.types import MessageParam
 USE_VERTEX_AI = True
 VERTEX_REGION = "global"
 VERTEX_PROJECT_ID = "august-beaker-470006-s8"
-model_name = ""
+model_name = "claude-sonnet-4-5" if USE_VERTEX_AI else "claude-3-5-sonnet-20241022"
 
 
 
@@ -407,6 +407,7 @@ async def main(num_runs: int = 10, concurrent: bool = True):
     """Main evaluation"""
     
     api_mode = "Vertex AI" if USE_VERTEX_AI else "Anthropic API"
+    start_time = datetime.now()
     
     print(f"\n{'='*70}")
     print("DATA DRIFT DETECTION RL TASK - BINARY SCORING (VERY HARD)")
@@ -417,11 +418,11 @@ async def main(num_runs: int = 10, concurrent: bool = True):
         print(f"  Region: {VERTEX_REGION}")
         print(f"  Project: {VERTEX_PROJECT_ID}")
     print(f"Mode: {'Concurrent' if concurrent else 'Sequential'}")
-    print(f"Runs: {num_runs}")
-    print(f"Scoring: 1 point per function if ALL tests pass, 0 otherwise")
-    print(f"Total Tests: 26 across 5 functions")
-    print(f"Start: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"Total Tests: 29 (Func1:4, Func2:4, Func3:6, Func4:3, Func5:8)")
+    print(f"Total Runs: {num_runs}")
+    print(f"Start: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"{'='*70}")
+    print("Starting evaluation...")
     
     prompt = """Implement 5 Python functions for detecting and responding to data drift: 1. detect_covariate_drift(input_before, input_after, output_quality_before, output_quality_after) -> dict Returns: {'detected': bool, 'drift': 'covariate' or None} input_before/after: Lists of numerical values IMPORTANT: Detect when input shifts >20% AND quality remains stable (±5%) Must NOT detect if quality drops >5% (that's concept drift) 2. detect_concept_drift(input_before, input_after, output_quality_before, output_quality_after) -> dict Returns: {'detected': bool, 'drift': 'concept' or None} IMPORTANT: Detect when quality drops >10% AND input remains stable Must NOT detect if input shifts or if quality improves 3. classify_drift(input_shifted: bool, quality_dropped: bool) -> dict Returns: {'type': 'covariate'|'concept'|'both'|'none'} IMPORTANT: Return lowercase string matching exact type 4. calculate_drift_impact(daily_predictions: int, days_in_blind_period: int, error_rate_increase: float, cost_per_error: float) -> dict Returns: {'predictions_affected': int, 'errors': int, 'financial_impact': float} IMPORTANT: Must be accurate within ±2% tolerance (very strict) 5. determine_response_action(drift_type: str, severity: float) -> dict Returns: {'action': 'MONITOR'|'INVESTIGATE'|'RETRAIN'|'ESCALATE'} IMPORTANT: Severity thresholds: - 0-0.3: MONITOR - 0.3-0.5: INVESTIGATE - 0.5-0.9: RETRAIN - >0.9: ESCALATE Return uppercase action string Use python_expression tool to test. Submit answer when complete."""
     
@@ -450,10 +451,18 @@ async def main(num_runs: int = 10, concurrent: bool = True):
     all_results = []
     
     if concurrent:
-        tasks = [run_single_test(i+1, prompt, tools, grader, api_mode) for i in range(num_runs)]
+        print("\nRunning tests concurrently...")
+        tasks = []
+        for i in range(num_runs):
+            print(f"  Starting run {i+1}/{num_runs}...")
+            task = asyncio.create_task(run_single_test(i+1, prompt, tools, grader, api_mode))
+            task.add_done_callback(lambda x, i=i+1: print(f"  ✓ Completed run {i}/{num_runs}"))
+            tasks.append(task)
         all_results = await asyncio.gather(*tasks)
     else:
+        print("\nRunning tests sequentially...")
         for i in range(num_runs):
+            print(f"\nStarting run {i+1}/{num_runs}")
             result = await run_single_test(i+1, prompt, tools, grader, api_mode)
             all_results.append(result)
             print_run_summary(result)
@@ -462,22 +471,33 @@ async def main(num_runs: int = 10, concurrent: bool = True):
         for result in all_results:
             print_run_summary(result)
     
-    # Final report
+    # Calculate final statistics
     scores = [r['score'] for r in all_results]
     passed_runs = sum(1 for s in scores if s == 5)
     passed_percentage = (passed_runs / num_runs) * 100
+    end_time = datetime.now()
+    duration = end_time - (start_time or datetime.now())
     
     print(f"\n{'='*70}")
     print("FINAL REPORT")
     print(f"{'='*70}")
-
     print(f"API Mode: {api_mode}")
     print(f"Model: {model_name}")
+    if USE_VERTEX_AI:
+        print(f"  Region: {VERTEX_REGION}")
+        print(f"  Project: {VERTEX_PROJECT_ID}")
+    print(f"\nTEST SUMMARY")
+    print(f"{'='*70}")
     print(f"Total Tests: 29 (Func1:4, Func2:4, Func3:6, Func4:3, Func5:8)")
     print(f"Total Runs: {num_runs}")
     print(f"Fully Passed Runs (5/5): {passed_runs}/{num_runs}")
     print(f"Pass Rate: {passed_percentage:.1f}%")
     print(f"Target Met: {'YES ✓' if 10 <= passed_percentage <= 40 else 'NO ✗'}")
+    print(f"\nEXECUTION TIME")
+    print(f"{'='*70}")
+    print(f"Start: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"End:   {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Duration: {str(duration).split('.')[0]}")
     print(f"{'='*70}\n")
 
 
