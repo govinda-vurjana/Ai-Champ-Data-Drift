@@ -19,10 +19,10 @@ from anthropic.types import MessageParam
 # CONFIGURATION
 # ============================================================================
 
-USE_VERTEX_AI = True
+USE_VERTEX_AI = False
 VERTEX_REGION = "global"
 VERTEX_PROJECT_ID = "august-beaker-470006-s8"
-model_name = "claude-sonnet-4-5" if USE_VERTEX_AI else "claude-3-5-sonnet-20241022"
+model_name = "claude-sonnet-4-5" if USE_VERTEX_AI else "claude-sonnet-4-5-20250929"
 
 
 
@@ -277,7 +277,7 @@ async def run_agent_loop(
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY not set")
         async_client = AsyncAnthropic(api_key=api_key)
-        model_name = "claude-3-5-sonnet-20241022"
+        model_name = "claude-sonnet-4-5-20250929"
     
     messages: list[MessageParam] = [{"role": "user", "content": prompt}]
     submitted_code = None
