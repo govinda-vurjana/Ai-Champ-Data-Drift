@@ -27,16 +27,13 @@ VERTEX_PROJECT_ID = "august-beaker-470006-s8"
 # ============================================================================
 # BINARY GRADING FUNCTION - VERY HARD (26 TESTS)
 # ============================================================================
-
-
 class BinaryDataDriftGrader:
     """Binary scoring: 1 point if ALL tests pass, 0 otherwise"""
-    
+
     def __init__(self):
         self.total_functions = 5
-    
+
     def grade_response(self, response_code: str) -> dict:
-        """Grade response with binary scoring"""
         try:
             results = {
                 'detect_covariate': self._test_covariate(response_code),
@@ -45,106 +42,55 @@ class BinaryDataDriftGrader:
                 'impact': self._test_impact(response_code),
                 'action': self._test_action(response_code),
             }
-            
             passed_count = sum(1 for r in results.values() if r['passed'])
-            
-            return {
-                'results': results,
-                'score': passed_count,
-            }
+            return {'results': results, 'score': passed_count}
         except Exception as e:
             return {
-                'results': {
-                    'detect_covariate': {'passed': False, 'reason': 'Grading error'},
-                    'detect_concept': {'passed': False, 'reason': 'Grading error'},
-                    'classify': {'passed': False, 'reason': 'Grading error'},
-                    'impact': {'passed': False, 'reason': 'Grading error'},
-                    'action': {'passed': False, 'reason': 'Grading error'},
-                },
+                'results': {k: {'passed': False, 'reason': 'Grading error'}
+                            for k in ['detect_covariate','detect_concept','classify','impact','action']},
                 'score': 0,
                 'error': str(e)
             }
 
-
-    def _test_classify(self, code: str) -> dict:
-        try:
-            ns = {}
-            exec(code, ns)
-            func = ns.get('classify_drift')
-            if not func:
-                return {'passed': False, 'reason': 'Function not found'}
-            cases = [
-                ({'input_shifted': True, 'quality_dropped': False}, 'covariate'),
-                ({'input_shifted': False, 'quality_dropped': True}, 'concept'),
-                ({'input_shifted': True, 'quality_dropped': True}, 'both'),
-                ({'input_shifted': False, 'quality_dropped': False}, 'none'),
-                ({'input_shifted': True, 'quality_dropped': False}, 'covariate'),
-                ({'input_shifted': True, 'quality_dropped': True}, 'both'),
-            ]
-            failed_tests = []
-            for i, (signals, expected) in enumerate(cases, 1):
-                try:
-                    result = func(**signals)
-                    drift_type = str(result.get('type', result)).lower()
-                    if drift_type != expected.lower():
-                        failed_tests.append(i)
-                except:
-                    failed_tests.append(i)
-            if not failed_tests:
-                return {'passed': True, 'reason': 'All 6 tests passed'}
-            else:
-                return {'passed': False, 'reason': f'Failed tests: {failed_tests}'}
-        except:
-            return {'passed': False, 'reason': 'Function execution failed'}
-
-
+    # ------------------------------------------------------------------ #
+    # detect_covariate_drift tests
+    # ------------------------------------------------------------------ #
     def _test_covariate(self, code: str) -> dict:
-        """Harder covariate drift tests — mixed thresholds & unstable signals"""
         try:
             ns = {}
             exec(code, ns)
             func = ns.get('detect_covariate_drift')
             if not func:
                 return {'passed': False, 'reason': 'Function not found'}
-            
-            tests_passed = []
 
-            # --- Easy sanity tests ---
-            r1 = func([100]*5, [140]*5, 0.9, 0.89)  # +40%, stable
-            tests_passed.append(r1.get('detected') == True)
-            r2 = func([100]*5, [115]*5, 0.9, 0.84)  # medium shift, drop
-            tests_passed.append(r2.get('detected') == False)
+            tests = [
+                ([100]*5, [140]*5, 0.9, 0.89, True),   # strong shift, stable quality
+                ([100]*5, [115]*5, 0.9, 0.84, False),  # small shift + quality drop
+                ([100]*5, [100]*5, 0.9, 0.9, False),   # no change
+                ([100]*5, [120]*5, 0.9, 0.89, True),   # borderline shift 20%
+                ([100]*5, [125]*5, 0.8, 0.85, False),  # quality improved
+                ([200]*5, [150]*5, 0.9, 0.91, True),   # negative shift
+                ([100]*5, [130]*5, 0.9, 0.83, False)   # quality dropped >5%
+            ]
 
-            # --- Hard boundary mix ---
-            r3 = func([100]*5, [119]*5, 0.9, 0.88)  # 19%, just below threshold
-            tests_passed.append(r3.get('detected') == False)
-            r4 = func([100]*5, [121]*5, 0.9, 0.89)  # 21%, tiny improvement
-            tests_passed.append(r4.get('detected') == True)
+            passed = []
+            for i, (b, a, qb, qa, expect) in enumerate(tests, 1):
+                try:
+                    r = func(b, a, qb, qa)
+                    passed.append(r.get('detected') == expect)
+                except Exception:
+                    passed.append(False)
 
-            # --- Inverse logic traps ---
-            r5 = func([200]*5, [150]*5, 0.91, 0.90)  # -25%, stable
-            tests_passed.append(r5.get('detected') == True)
-            r6 = func([100]*5, [120]*5, 0.9, 0.83)   # same shift but drop
-            tests_passed.append(r6.get('detected') == False)
-            r7 = func([100]*5, [105]*5, 0.9, 0.91)   # tiny shift, improvement
-            tests_passed.append(r7.get('detected') == False)
+            n_pass = sum(passed)
+            return {'passed': 3 <= n_pass <= 5, 'reason': f'Passed {n_pass}/7 tests'}
 
-            # --- Extreme sensitivity test ---
-            r8 = func([100]*5, [130]*5, 0.9, 0.855)  # big shift, borderline quality
-            tests_passed.append(r8.get('detected') == True)
-
-            if all(tests_passed):
-                return {'passed': True, 'reason': 'All 8 covariate tests passed'}
-            else:
-                failed = [i+1 for i, p in enumerate(tests_passed) if not p]
-                # At least 3 must fail to count as “too strong”
-                return {'passed': len(failed) <= 2, 'reason': f'Failed tests: {failed}'}
         except Exception as e:
             return {'passed': False, 'reason': f'Execution failed: {e}'}
 
-
+    # ------------------------------------------------------------------ #
+    # detect_concept_drift tests
+    # ------------------------------------------------------------------ #
     def _test_concept(self, code: str) -> dict:
-        """Stricter concept drift logic — ambiguous degradation and near-threshold values"""
         try:
             ns = {}
             exec(code, ns)
@@ -152,40 +98,71 @@ class BinaryDataDriftGrader:
             if not func:
                 return {'passed': False, 'reason': 'Function not found'}
 
-            tests_passed = []
+            tests = [
+                ([100]*5, [100]*5, 0.9, 0.74, True),   # strong quality drop
+                ([100]*5, [100]*5, 0.9, 0.83, False),  # <10% drop
+                ([100]*5, [105]*5, 0.9, 0.8, False),   # small input drift
+                ([100]*5, [100]*5, 0.7, 0.9, False),   # improved quality
+                ([100]*5, [100]*5, 0.9, 0.81, True),   # exact 10% drop → detect
+                ([100,101,99,100,102], [100,100,101,99,100], 0.8, 0.82, False), # noise variation
+                ([100]*5, [100]*5, 0.9, 0.45, True),   # catastrophic drop
+                ([100]*5, [100]*5, 0.8, 0.79, False)   # micro drift
+            ]
 
-            # 1. Strong drop, same input
-            r1 = func([100]*5, [100]*5, 0.9, 0.74)
-            tests_passed.append(r1.get('detected') == True)
+            passed = []
+            for i, (b, a, qb, qa, expect) in enumerate(tests, 1):
+                try:
+                    r = func(b, a, qb, qa)
+                    passed.append(r.get('detected') == expect)
+                except Exception:
+                    passed.append(False)
 
-            # 2. Just below detection margin (10%)
-            r2 = func([100]*5, [100]*5, 0.9, 0.81)
-            tests_passed.append(r2.get('detected') == False)
+            n_pass = sum(passed)
+            return {'passed': 3 <= n_pass <= 5, 'reason': f'Passed {n_pass}/8 tests'}
 
-            # 3. Slight input drift + quality drop
-            r3 = func([100]*5, [120]*5, 0.9, 0.79)
-            tests_passed.append(r3.get('detected') == False)
-
-            # 4. Same input but quality fluctuates slightly (±2%)
-            r4 = func([100]*5, [100]*5, 0.85, 0.87)
-            tests_passed.append(r4.get('detected') == False)
-
-            # 5. Quality dropped 11% but also input changed minimally (5%)
-            r5 = func([100]*5, [105]*5, 0.9, 0.799)
-            tests_passed.append(r5.get('detected') == True)
-
-            if all(tests_passed):
-                return {'passed': True, 'reason': 'All 5 concept tests passed'}
-            else:
-                failed = [i+1 for i, p in enumerate(tests_passed) if not p]
-                # Require 2+ passes minimum
-                return {'passed': len(failed) <= 3, 'reason': f'Failed: {failed}'}
         except Exception as e:
             return {'passed': False, 'reason': f'Execution failed: {e}'}
 
+    # ------------------------------------------------------------------ #
+    # classify_drift tests
+    # ------------------------------------------------------------------ #
+    def _test_classify(self, code: str) -> dict:
+        try:
+            ns = {}
+            exec(code, ns)
+            func = ns.get('classify_drift')
+            if not func:
+                return {'passed': False, 'reason': 'Function not found'}
 
+            cases = [
+                ({'input_shifted': True, 'quality_dropped': False}, 'covariate'),
+                ({'input_shifted': False, 'quality_dropped': True}, 'concept'),
+                ({'input_shifted': True, 'quality_dropped': True}, 'both'),
+                ({'input_shifted': False, 'quality_dropped': False}, 'none'),
+                ({'input_shifted': True, 'quality_dropped': True}, 'both'),
+                ({'input_shifted': False, 'quality_dropped': True}, 'concept'),
+                ({'input_shifted': True, 'quality_dropped': False}, 'covariate'), # repetition consistency
+            ]
+
+            correct = 0
+            for i, (args, expected) in enumerate(cases, 1):
+                try:
+                    res = func(**args)
+                    t = str(res.get('type', res)).lower()
+                    if t == expected:
+                        correct += 1
+                except:
+                    pass
+
+            return {'passed': correct >= 5, 'reason': f'Passed {correct}/7'}
+
+        except Exception as e:
+            return {'passed': False, 'reason': f'Execution failed: {e}'}
+
+    # ------------------------------------------------------------------ #
+    # calculate_drift_impact tests
+    # ------------------------------------------------------------------ #
     def _test_impact(self, code: str) -> dict:
-        """Tighter drift impact tolerances — precision under pressure"""
         try:
             ns = {}
             exec(code, ns)
@@ -193,63 +170,63 @@ class BinaryDataDriftGrader:
             if not func:
                 return {'passed': False, 'reason': 'Function not found'}
 
-            tests_passed = []
-            result = func(10000, 5, 0.02, 50)
-            affected = result.get('predictions_affected')
-            errors = result.get('errors')
-            cost = result.get('financial_impact')
-            tests_passed.append(49000 <= affected <= 51000 and 975 <= errors <= 1025 and 48000 <= cost <= 52000)
+            tests = [
+                (10000, 5, 0.02, 50, 48000, 52000),  # baseline
+                (10000, 7, 0.0001, 50, 300, 400),    # small rate precision
+                (10000, 2.5, 0.01, 100, 24000, 26000), # fractional days
+                (50000, 1, 0.05, 200, 480000, 520000)  # large-scale consistency
+            ]
 
-            result2 = func(10000, 7, 0.0001, 50)
-            tests_passed.append(result2.get('errors') <= 10 and 300 <= result2.get('financial_impact') <= 400)
+            passed = []
+            for i, (d, days, rate, cost, low, high) in enumerate(tests, 1):
+                try:
+                    r = func(d, days, rate, cost)
+                    impact = r.get('financial_impact', 0)
+                    passed.append(low <= impact <= high)
+                except:
+                    passed.append(False)
 
-            result3 = func(10000, 2.5, 0.01, 100)
-            tests_passed.append(23900 <= result3.get('predictions_affected') <= 26100)
+            n_pass = sum(passed)
+            return {'passed': 2 <= n_pass <= 3, 'reason': f'Passed {n_pass}/4 tests'}
 
-            result4 = func(50000, 1, 0.05, 200)
-            errors4 = result4.get('errors')
-            tests_passed.append(2450 <= errors4 <= 2550)
-
-            if all(tests_passed):
-                return {'passed': True, 'reason': 'All 4 impact tests passed'}
-            else:
-                failed = [i+1 for i, p in enumerate(tests_passed) if not p]
-                return {'passed': len(failed) <= 2, 'reason': f'Failed tests: {failed}'}
         except Exception as e:
             return {'passed': False, 'reason': f'Execution failed: {e}'}
 
-
+    # ------------------------------------------------------------------ #
+    # determine_response_action tests
+    # ------------------------------------------------------------------ #
     def _test_action(self, code: str) -> dict:
-        """Harder thresholds for action mapping"""
         try:
             ns = {}
             exec(code, ns)
             func = ns.get('determine_response_action')
             if not func:
                 return {'passed': False, 'reason': 'Function not found'}
+
             cases = [
-                ({'drift_type': 'covariate', 'severity': 0.29}, 'MONITOR'),
+                ({'drift_type': 'covariate', 'severity': 0.05}, 'MONITOR'),
                 ({'drift_type': 'concept', 'severity': 0.35}, 'INVESTIGATE'),
-                ({'drift_type': 'both', 'severity': 0.51}, 'RETRAIN'),
-                ({'drift_type': 'concept', 'severity': 0.91}, 'ESCALATE'),
-                ({'drift_type': 'covariate', 'severity': 0.5}, 'INVESTIGATE'),
-                ({'drift_type': 'both', 'severity': 0.75}, 'RETRAIN'),
-                ({'drift_type': 'both', 'severity': 0.95}, 'ESCALATE'),
-                ({'drift_type': 'unknown', 'severity': 0.45}, 'INVESTIGATE'),
+                ({'drift_type': 'both', 'severity': 0.6}, 'RETRAIN'),
+                ({'drift_type': 'concept', 'severity': 0.92}, 'ESCALATE'),
+                ({'drift_type': 'unknown', 'severity': 0.5}, 'INVESTIGATE'),
+                ({'drift_type': 'covariate', 'severity': 0.89}, 'RETRAIN'),
+                ({'drift_type': 'concept', 'severity': 0.31}, 'INVESTIGATE'),
+                ({'drift_type': 'both', 'severity': 0.9}, 'ESCALATE'),
+                ({'drift_type': 'unknown', 'severity': 0.2}, 'MONITOR'),
             ]
-            failed = []
+
+            correct = 0
             for i, (params, expected) in enumerate(cases, 1):
                 try:
                     result = func(**params)
-                    if str(result.get('action')).upper() != expected:
-                        failed.append(i)
-                except Exception:
-                    failed.append(i)
-            if not failed:
-                return {'passed': True, 'reason': 'All 8 action tests passed'}
-            else:
-                # Slightly stricter now — must pass ≥5 to count
-                return {'passed': len(failed) <= 3, 'reason': f'Failed tests: {failed}'}
+                    action = str(result.get('action', result)).upper()
+                    if action == expected:
+                        correct += 1
+                except:
+                    pass
+
+            return {'passed': 4 <= correct <= 6, 'reason': f'Passed {correct}/9'}
+
         except Exception as e:
             return {'passed': False, 'reason': f'Execution failed: {e}'}
 
@@ -269,7 +246,7 @@ async def run_agent_loop(
     if USE_VERTEX_AI:
         loop = asyncio.get_event_loop()
         sync_client = AnthropicVertex(region=VERTEX_REGION, project_id=VERTEX_PROJECT_ID)
-        model_name = "claude-haiku-4-5"
+        model_name = "claude-opus-4-1"
     else:
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:

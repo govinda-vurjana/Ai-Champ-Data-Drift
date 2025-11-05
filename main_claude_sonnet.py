@@ -269,7 +269,7 @@ async def run_agent_loop(
     if USE_VERTEX_AI:
         loop = asyncio.get_event_loop()
         sync_client = AnthropicVertex(region=VERTEX_REGION, project_id=VERTEX_PROJECT_ID)
-        model_name = "claude-haiku-4-5"
+        model_name = "claude-sonnet-4-5"
     else:
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
