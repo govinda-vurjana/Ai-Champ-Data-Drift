@@ -22,6 +22,9 @@ from anthropic.types import MessageParam
 USE_VERTEX_AI = True
 VERTEX_REGION = "global"
 VERTEX_PROJECT_ID = "august-beaker-470006-s8"
+model_name = ""
+
+
 
 
 # ============================================================================
@@ -269,7 +272,7 @@ async def run_agent_loop(
     if USE_VERTEX_AI:
         loop = asyncio.get_event_loop()
         sync_client = AnthropicVertex(region=VERTEX_REGION, project_id=VERTEX_PROJECT_ID)
-        model_name = "claude-sonnet-4-5"
+        model_name = "claude-opus-4-1"
     else:
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
@@ -410,6 +413,7 @@ async def main(num_runs: int = 10, concurrent: bool = True):
     print("DATA DRIFT DETECTION RL TASK - BINARY SCORING (VERY HARD)")
     print(f"{'='*70}")
     print(f"API Mode: {api_mode}")
+    print(f"Model: {model_name}")
     if USE_VERTEX_AI:
         print(f"  Region: {VERTEX_REGION}")
         print(f"  Project: {VERTEX_PROJECT_ID}")
@@ -468,6 +472,7 @@ async def main(num_runs: int = 10, concurrent: bool = True):
     print("FINAL REPORT")
     print(f"{'='*70}")
     print(f"API Mode: {api_mode}")
+    print(f"Model: {model_name}")
     print(f"Total Tests: 29 (Func1:4, Func2:4, Func3:6, Func4:3, Func5:8)")
     print(f"Total Runs: {num_runs}")
     print(f"Fully Passed Runs (5/5): {passed_runs}/{num_runs}")
