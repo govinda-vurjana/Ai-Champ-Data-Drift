@@ -80,6 +80,11 @@ This evaluation tests whether an AI model (Claude) can implement **production-gr
 
 ---
 
+<img width="1994" height="684" alt="image" src="https://github.com/user-attachments/assets/e6b8d97b-8c41-4dd5-ad3a-9ca60acdb81f" />
+
+
+
+
 ## 📚 Background
 
 ### Why Data Drift Matters in Production
